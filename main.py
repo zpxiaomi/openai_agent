@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 import os
+import psycopg2
 from agents import Agent, Runner, GuardrailFunctionOutput, InputGuardrail, function_tool
 from agents.exceptions import InputGuardrailTripwireTriggered
 from pydantic import BaseModel
@@ -20,12 +21,48 @@ async def get_best_deal_data(category: str) -> str:
     Args:
         category: The category to fetch the best deal for.
     """
-    best_deals = {
+    print("get_best_deal_data called with category:", category)
+    # Database connection
+    db_url = os.getenv("DATABASE_URL")
+    print("DATABASE_URL:", db_url)
+    # map category to sql query and fetch data from database
+    category_name_to_id = {
+        "meat": "fleischUndGefluegel",
+        "snacks": "snacks",
+        "vegetables": "Obst, Gemüse" 
+    }
+    category_id = category_name_to_id.get(category, None)
+    print("category_id", category_id)
+    if category_id is None:
+        return f"Error: Invalid category '{category}'."
+    sql_query = f"SELECT * FROM public.deals where category_level_1 = '{category_id}' order by discount_percentage desc limit 1;"
+    print("SQL Query:", sql_query)
+
+    try:
+        with psycopg2.connect(db_url) as db_connection:
+            with db_connection.cursor() as cursor:
+                cursor.execute(sql_query)
+                records = cursor.fetchall()
+                print(records)
+    except psycopg2.OperationalError as e:
+        print(f"Database connection failed: {e}")
+        return "Error: Unable to connect to the database. Please try again later."
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return f"Error: {e}"
+
+    best_deals_fallback = {
         "meat": "Chicken breast at 5.99 EUR/kg",
         "snacks": "Chips at 1.49 EUR/bag",
         "dairy": "Milk at 0.89 EUR/liter"
-     }
-    return f"best deal for category '{category}' is {best_deals[category]}."
+    }
+
+    if records is not None and len(records) > 0:
+        return f"best deal for category '{category}' from datbase query are {records}."
+    else:
+        # no data found for category, use fallback
+        return f"best deal for category '{category}' is {best_deals_fallback[category]}."
+
 
 best_deal_in_category_agent = Agent(
     name="Best Deal expert",
@@ -69,8 +106,9 @@ async def main():
     # Example 1: supermarket deals question
     # what is the best deal for meat this week in the supermarkets?
     # what is the best deal for snacks this week in the supermarkets?
+    # vegetables
     try:
-        result = await Runner.run(triage_agent, "what is the best deal for snacks this week in the supermarkets?")
+        result = await Runner.run(triage_agent, "what is the best deal for vegetables this week in the supermarkets?")
         print(result.final_output)
     except InputGuardrailTripwireTriggered as e:
         print("Guardrail blocked this input:", e)
