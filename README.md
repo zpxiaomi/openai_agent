@@ -20,7 +20,7 @@ By default the installer places `uv.exe` in `%USERPROFILE%\.local\bin`. Confirm 
 
 1. Ensure the desired Python version is available:
    ```bash
-   uv python install 3.12
+   uv python install 3.13
    ```
 2. Sync dependencies and create the virtual environment:
    ```bash
