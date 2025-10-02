@@ -1,0 +1,75 @@
+*** Begin Patch
+*** Update File: main.py
+@@
+-from dotenv import load_dotenv
+-import os
+-import openai
+-import psycopg2
+-from agents import Agent, Runner, GuardrailFunctionOutput, InputGuardrail, function_tool
+-from agents.exceptions import InputGuardrailTripwireTriggered
+-from pydantic import BaseModel
+-import asyncio
++from dotenv import load_dotenv
++import os
++import psycopg2
++from agents import Agent, Runner, GuardrailFunctionOutput, InputGuardrail, function_tool
++from agents.exceptions import InputGuardrailTripwireTriggered
++from pydantic import BaseModel
++import asyncio
++from openai import AsyncOpenAI
+@@
+-async def generate_sql_query(category_id: str) -> str:
++async_openai_client = AsyncOpenAI()
++
++
++def _extract_text_from_message(message) -> str:
++    """Best-effort extraction of text content from a chat completion message."""
++    if message is None:
++        return ""
++
++    if hasattr(message, "model_dump"):
++        message_dict = message.model_dump()
++    elif isinstance(message, dict):
++        message_dict = message
++    else:
++        return str(message)
++
++    content = message_dict.get("content")
++    if isinstance(content, str):
++        return content.strip()
++
++    text_parts = []
++    if isinstance(content, list):
++        for part in content:
++            if not isinstance(part, dict):
++                continue
++            if part.get("type") != "text":
++                continue
++            text_payload = part.get("text")
++            if isinstance(text_payload, str):
++                text_parts.append(text_payload)
++            elif isinstance(text_payload, dict):
++                value = text_payload.get("value")
++                if isinstance(value, str):
++                    text_parts.append(value)
++
++    if text_parts:
++        return "".join(text_parts).strip()
++
++    return "" if content is None else str(content).strip()
++
++
++async def generate_sql_query(category_id: str) -> str:
+@@
+-        response = openai.ChatCompletion.create(
+-            model="gpt-4",
+-            messages=[{"role": "user", "content": prompt}],
+-        )
+-        sql_query = response['choices'][0]['message']['content']
++        response = await async_openai_client.chat.completions.create(
++            model="gpt-4o-mini",
++            messages=[{"role": "user", "content": prompt}],
++        )
++        first_choice = response.choices[0] if response.choices else None
++        sql_query = _extract_text_from_message(getattr(first_choice, "message", None))
+*** End Patch
